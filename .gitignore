@@ -1,0 +1,17 @@
+# Environments
+cctv-mvs/
+venv/
+__pycache__/
+*.pyc
+
+# Data (kept on Drive, not in git)
+data/
+frames/
+*.mp4
+*.avi
+*.mov
+
+# OS/IDE
+.DS_Store
+.ipynb_checkpoints/
+.vscode/
