@@ -15,3 +15,6 @@ frames/
 .DS_Store
 .ipynb_checkpoints/
 .vscode/
+
+# Local machine config (per-user, not shared)
+.env
