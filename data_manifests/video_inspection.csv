@@ -1,0 +1,4 @@
+view,filename,codec_name,width,height,r_frame_rate,duration_sec,nb_frames
+view1,view1.avi,mpeg4,360,288,25/1,156.600000,3915
+view2,view2.avi,mpeg4,360,288,25/1,156.600000,3915
+view3,view3.avi,mpeg4,360,288,25/1,156.600000,3915
