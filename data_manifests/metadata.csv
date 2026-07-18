@@ -1,0 +1,4 @@
+view,fps,frame_offset,time_offset_sec,resolution,frame_count,notes
+view1,25.0,3,0.12,360x288,3912,Aligned to view2 (reference); offset +3 frames
+view2,25.0,0,0.0,360x288,3915,Reference view
+view3,25.0,1,0.04,360x288,3914,Aligned to view2 (reference); offset +1 frames
