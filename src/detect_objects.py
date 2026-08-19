@@ -86,9 +86,10 @@ def detect_view(view_name: str, model: YOLO, force: bool = False) -> int:
     out_path = DETECTIONS_DIR / f"{view_name}.csv"
 
     if out_path.exists() and not force:
+        frame_count = len(list(frames_dir.glob("frame_*.jpg")))
         print(f"[SKIP] {view_name}: detections already present at {out_path} "
               f"(use --force to re-run)")
-        return 0
+        return frame_count  
 
     frame_paths = sorted(frames_dir.glob("frame_*.jpg"))
     if not frame_paths:
@@ -135,15 +136,30 @@ def detect_view(view_name: str, model: YOLO, force: bool = False) -> int:
 
 
 def write_manifest(summary_rows: list[dict]) -> Path:
-    """Write a lightweight per-view run summary to data_manifests/detections_summary.csv."""
+    """
+    Write a lightweight per-view run summary to data_manifests/detections_summary.csv.
+
+    Merges with any existing manifest, keyed by view, so that separate
+    per-view invocations (e.g. --view view1 then --view view2) accumulate
+    into one combined manifest instead of each run overwriting the last.
+    """
     MANIFEST_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    existing_rows = {}
+    if MANIFEST_PATH.exists():
+        with open(MANIFEST_PATH) as f:
+            for row in csv.DictReader(f):
+                existing_rows[row["view"]] = row
+
+    for row in summary_rows:
+        existing_rows[row["view"]] = row
+
+    fieldnames = ["view", "frames_processed", "model", "confidence_threshold"]
     with open(MANIFEST_PATH, "w", newline="") as f:
-        writer = csv.DictWriter(
-            f,
-            fieldnames=["view", "frames_processed", "model", "confidence_threshold"],
-        )
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
-        writer.writerows(summary_rows)
+        writer.writerows(existing_rows.values())
+
     print(f"[DONE] Manifest written to {MANIFEST_PATH}")
     return MANIFEST_PATH
 
