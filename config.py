@@ -10,3 +10,8 @@ RAW_VIDEOS = DRIVE_ROOT / "raw_videos"
 DATA_DIR = DRIVE_ROOT / "data"
 LOGS_DIR = DRIVE_ROOT / "logs"
 CHECKPOINTS = DRIVE_ROOT / "checkpoints"
+
+# --- Config: Stage 1 object detection --------------------------------------
+DETECTION_MODEL      = "yolov8m.pt"
+DETECTION_CONFIDENCE = 0.35
+DETECTION_IMG_SIZE   = 640

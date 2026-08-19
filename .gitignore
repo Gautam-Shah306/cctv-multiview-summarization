@@ -18,3 +18,5 @@ frames/
 
 # Local machine config (per-user, not shared)
 .env
+
+PROJECT_CONTEXT.md
