@@ -28,6 +28,9 @@ import csv
 import sys
 from pathlib import Path
 
+# add to Group 1 (standard library) imports
+import shutil
+
 # Group 2 — third-party
 from ultralytics import YOLO
 
@@ -57,7 +60,7 @@ def load_model(model_name: str) -> YOLO:
         # relocate it into CHECKPOINTS so weights live with other bulky artifacts
         downloaded = Path(model_name)
         if downloaded.exists():
-            downloaded.rename(weights_path)
+            shutil.move(str(downloaded), str(weights_path))
         print(f"[INFO] Downloaded {model_name} -> {weights_path}")
     else:
         print(f"[INFO] Loaded cached weights from {weights_path}")
