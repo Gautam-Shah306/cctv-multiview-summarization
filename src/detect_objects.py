@@ -33,6 +33,7 @@ import shutil
 
 # Group 2 — third-party
 from ultralytics import YOLO
+import torch
 
 # Group 3 — local / project
 from config import DATA_DIR, CHECKPOINTS, DETECTION_MODEL, DETECTION_CONFIDENCE, DETECTION_IMG_SIZE
@@ -64,6 +65,13 @@ def load_model(model_name: str) -> YOLO:
         print(f"[INFO] Downloaded {model_name} -> {weights_path}")
     else:
         print(f"[INFO] Loaded cached weights from {weights_path}")
+    
+    import torch
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = YOLO(str(weights_path))
+    model.to(device)
+    print(f"[INFO] Using device: {device}")
 
     return model
 
@@ -91,7 +99,7 @@ def detect_view(view_name: str, model: YOLO, force: bool = False) -> int:
     rows = []
 
     print(f"[INFO] Running detection on {view_name} ({len(frame_paths)} frames)")
-    for frame_path in frame_paths:
+    for i, frame_path in enumerate(frame_paths):
         frame_idx = int(frame_path.stem.split("_")[1])
         results = model.predict(
             source=str(frame_path),
@@ -109,6 +117,9 @@ def detect_view(view_name: str, model: YOLO, force: bool = False) -> int:
                 "confidence": round(float(box.conf[0]), 4),
                 "class_id": PERSON_CLASS_ID,
             })
+        
+        if (i + 1) % 200 == 0 or (i + 1) == len(frame_paths):
+            print(f"[INFO] {view_name}: {i + 1}/{len(frame_paths)} frames processed")
 
     with open(out_path, "w", newline="") as f:
         writer = csv.DictWriter(
