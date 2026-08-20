@@ -12,6 +12,6 @@ LOGS_DIR = DRIVE_ROOT / "logs"
 CHECKPOINTS = DRIVE_ROOT / "checkpoints"
 
 # --- Config: Stage 1 object detection --------------------------------------
-DETECTION_MODEL      = "yolov8m.pt"
+DETECTION_MODEL = "yolo26m.pt"   # was yolov8m.pt
 DETECTION_CONFIDENCE = 0.35
 DETECTION_IMG_SIZE   = 640
