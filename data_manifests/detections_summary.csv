@@ -1,3 +1,3 @@
 view,frames_processed,model,confidence_threshold
-view1,3912,yolov8m.pt,0.35
+view1,3912,yolo26m.pt,0.35
 view2,3915,yolov8m.pt,0.35
