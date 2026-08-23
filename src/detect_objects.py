@@ -30,6 +30,7 @@ from pathlib import Path
 
 # add to Group 1 (standard library) imports
 import shutil
+import tempfile
 
 # Group 2 — third-party
 from ultralytics import YOLO
@@ -92,6 +93,22 @@ def detect_view(view_name: str, model: YOLO, force: bool = False) -> int:
         return frame_count  
 
     frame_paths = sorted(frames_dir.glob("frame_*.jpg"))
+
+    # Drive-mounted reads are extremely slow for many small files (~450ms/frame
+    # measured); copy this view's frames to local disk once, then read from
+    # there for the actual detection loop.
+    local_cache_dir = Path(tempfile.gettempdir()) / "frame_cache" / view_name
+    local_cache_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"[INFO] Caching {view_name} frames to local disk ({local_cache_dir})")
+    local_frame_paths = []
+    for p in frame_paths:
+        local_path = local_cache_dir / p.name
+        if not local_path.exists():
+            shutil.copy(p, local_path)
+        local_frame_paths.append(local_path)
+    print(f"[INFO] {view_name}: {len(local_frame_paths)} frames cached locally")
+
     if not frame_paths:
         print(f"[ERROR] No frames found in {frames_dir}", file=sys.stderr)
         sys.exit(1)
@@ -100,13 +117,13 @@ def detect_view(view_name: str, model: YOLO, force: bool = False) -> int:
     rows = []
 
     print(f"[INFO] Running detection on {view_name} ({len(frame_paths)} frames)")
-    for i, frame_path in enumerate(frame_paths):
+    for i, frame_path in enumerate(local_frame_paths):
         frame_idx = int(frame_path.stem.split("_")[1])
         results = model.predict(
             source=str(frame_path),
             conf=DETECTION_CONFIDENCE,
             imgsz=DETECTION_IMG_SIZE,
-            classes=[PERSON_CLASS_ID],
+            classes=[PERSON_CLASS_ID],  
             verbose=False,
         )
         for box in results[0].boxes:
