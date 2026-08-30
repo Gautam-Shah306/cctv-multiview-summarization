@@ -1,0 +1,4 @@
+view,detections_processed,embedding_dim,model,weights,batch_size
+view1,10263,512,osnet_x1_0,osnet_x1_0_market1501.pth,64
+view2,11600,512,osnet_x1_0,osnet_x1_0_market1501.pth,64
+view3,11282,512,osnet_x1_0,osnet_x1_0_market1501.pth,64

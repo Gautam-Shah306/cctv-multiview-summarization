@@ -1,1 +1,2 @@
 ultralytics>=8.4.0
+lap>=0.5.12
