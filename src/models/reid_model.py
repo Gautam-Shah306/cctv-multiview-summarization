@@ -27,10 +27,12 @@ from config import CHECKPOINTS
 # Model weights URLs (official Torchreid releases & HuggingFace mirrors)
 MODEL_URLS = {
     "osnet_x1_0_market1501.pth": [
+        "https://huggingface.co/MYerassyl/retail-heat-osnet/resolve/main/osnet_x1_0_market1501.pth",
         "https://github.com/KaiyangZhou/deep-person-reid/releases/download/v1.0.0/osnet_x1_0_market1501.pth",
         "https://huggingface.co/pky/torchreid-models/resolve/main/osnet_x1_0_market1501.pth",
     ],
     "osnet_x1_0_msmt17.pth": [
+        "https://huggingface.co/rachana219/MODT2/resolve/main/trackers/strongsort/deep/checkpoint/osnet_x1_0_msmt17.pth",
         "https://github.com/KaiyangZhou/deep-person-reid/releases/download/v1.0.0/osnet_x1_0_msmt17.pth",
         "https://huggingface.co/pky/torchreid-models/resolve/main/osnet_x1_0_msmt17.pth",
     ],
