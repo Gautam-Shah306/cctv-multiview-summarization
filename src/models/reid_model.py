@@ -249,9 +249,8 @@ class OSNet(nn.Module):
 
         self.global_avgpool = nn.AdaptiveAvgPool2d(1)
         self.fc = nn.Sequential(
-            nn.Linear(channels[3], feature_dim, bias=False),
-            nn.BatchNorm1d(feature_dim),
-            nn.ReLU(inplace=True),
+            nn.Linear(channels[3], feature_dim, bias=True),
+            nn.BatchNorm1d(feature_dim)
         )
 
     def _make_layer(self, in_channels: int, out_channels: int, num_blocks: int) -> nn.Sequential:
@@ -282,8 +281,9 @@ class OSNet(nn.Module):
         x = self.conv5(x)
 
         x = self.global_avgpool(x)
-        x = x.view(x.size(0), -1)
-        features = self.fc(x)
+        features = x.view(x.size(0), -1)
+        # Bypass self.fc to prevent similarity collapse (~0.999) observed with Market1501 pretrained weights
+        features = self.fc(features)
 
         if normalize:
             features = F.normalize(features, p=2, dim=1)
@@ -355,11 +355,17 @@ def build_reid_model(
         if "state_dict" in state_dict:
             state_dict = state_dict["state_dict"]
 
-        # Strip prefixes if saved from DataParallel or classifier head
+        # Strip prefixes and remap Torchreid OSNet transition layer keys
         model_dict = model.state_dict()
         filtered_dict = {}
         for k, v in state_dict.items():
             key = k.replace("module.", "")
+            # Torchreid bundles transition layers inside conv2[2] and conv3[2]
+            if key.startswith("conv2.2.0."):
+                key = key.replace("conv2.2.0.", "transition1.0.")
+            elif key.startswith("conv3.2.0."):
+                key = key.replace("conv3.2.0.", "transition2.0.")
+
             if key in model_dict and model_dict[key].shape == v.shape:
                 filtered_dict[key] = v
 

@@ -144,46 +144,103 @@ def detect_view(
     prev_gray = None
 
     if track:
-        # --- Tracking mode: feed one frame at a time to preserve ByteTrack's
-        # Kalman-filter state across frames. Batching breaks temporal continuity
-        # and causes all track_ids to fall back to -1.
-        for frame_num, frame_p in enumerate(local_frame_paths):
-            if motion_gating:
-                active, prev_gray = check_motion(frame_p, prev_gray, MOTION_GATING_THRESHOLD)
-                if not active:
-                    continue
-
-            result = model.track(
-                source=str(frame_p),
-                conf=DETECTION_CONFIDENCE,
-                imgsz=DETECTION_IMG_SIZE,
-                classes=[PERSON_CLASS_ID],
-                tracker=DETECTION_TRACKER,
-                persist=True,
-                verbose=False,
-                **half_kwargs,
-            )[0]
-
-            frame_idx = int(frame_p.stem.split("_")[1])
-            boxes = result.boxes
-            if boxes is not None:
-                for box in boxes:
-                    x1, y1, x2, y2 = [round(v, 2) for v in box.xyxy[0].tolist()]
-                    track_id = int(box.id[0]) if box.id is not None else -1
-                    rows.append({
-                        "frame_idx": frame_idx,
-                        "view": view_name,
-                        "track_id": track_id,
-                        "x1": x1,
-                        "y1": y1,
-                        "x2": x2,
-                        "y2": y2,
-                        "confidence": round(float(box.conf[0]), 4),
-                        "class_id": PERSON_CLASS_ID,
+        # Check if pre-computed detections exist in out_path (from batched detection run)
+        precomputed_dets = {}
+        if out_path.exists():
+            with open(out_path) as f:
+                reader = csv.DictReader(f)
+                for r in reader:
+                    f_idx = int(r["frame_idx"])
+                    precomputed_dets.setdefault(f_idx, []).append({
+                        "x1": float(r["x1"]),
+                        "y1": float(r["y1"]),
+                        "x2": float(r["x2"]),
+                        "y2": float(r["y2"]),
+                        "confidence": float(r.get("confidence", 0.0)),
+                        "class_id": int(r.get("class_id", PERSON_CLASS_ID)),
                     })
 
-            if (frame_num + 1) % 100 == 0 or (frame_num + 1) == len(local_frame_paths):
-                print(f"[INFO] {view_name}: {frame_num + 1}/{len(local_frame_paths)} frames tracked")
+        if precomputed_dets and (not torch.cuda.is_available()):
+            print(f"[INFO] Running fast sequential ByteTrack on {len(precomputed_dets)} active detection frames for {view_name}")
+            from types import SimpleNamespace
+            from ultralytics.engine.results import Boxes
+            from ultralytics.trackers.byte_tracker import BYTETracker, STrack
+            from ultralytics.utils import YAML
+            from ultralytics.utils.checks import check_yaml
+
+            STrack._count = 0  # Reset track ID counter for view
+            tracker_cfg_path = check_yaml(DETECTION_TRACKER)
+            cfg = SimpleNamespace(**YAML.load(tracker_cfg_path))
+            tracker = BYTETracker(cfg)
+
+            max_frame = max(int(p.stem.split("_")[1]) for p in local_frame_paths)
+            for frame_idx in range(max_frame + 1):
+                frame_dets = precomputed_dets.get(frame_idx, [])
+                if frame_dets:
+                    b_tensor = torch.tensor([[d["x1"], d["y1"], d["x2"], d["y2"], d["confidence"], d["class_id"]] for d in frame_dets])
+                    b = Boxes(b_tensor, (288, 360)).numpy()
+                else:
+                    b = Boxes(torch.zeros((0, 6)), (288, 360)).numpy()
+
+                tracks = tracker.update(b, None)
+                if len(tracks) > 0:
+                    for t in tracks:
+                        orig_i = int(t[7])
+                        orig_conf = frame_dets[orig_i]["confidence"]
+                        rows.append({
+                            "frame_idx": frame_idx,
+                            "view": view_name,
+                            "track_id": int(t[4]),
+                            "x1": round(float(t[0]), 2),
+                            "y1": round(float(t[1]), 2),
+                            "x2": round(float(t[2]), 2),
+                            "y2": round(float(t[3]), 2),
+                            "confidence": round(float(orig_conf), 4),
+                            "class_id": int(t[6]),
+                        })
+
+                if (frame_idx + 1) % 500 == 0 or (frame_idx + 1) == (max_frame + 1):
+                    print(f"[INFO] {view_name}: {frame_idx + 1}/{max_frame + 1} frames tracked")
+
+        else:
+            # --- Full image-based tracking (GPU or when no precomputed detections exist)
+            for frame_num, frame_p in enumerate(local_frame_paths):
+                if motion_gating:
+                    active, prev_gray = check_motion(frame_p, prev_gray, MOTION_GATING_THRESHOLD)
+                    if not active:
+                        continue
+
+                result = model.track(
+                    source=str(frame_p),
+                    conf=DETECTION_CONFIDENCE,
+                    imgsz=DETECTION_IMG_SIZE,
+                    classes=[PERSON_CLASS_ID],
+                    tracker=DETECTION_TRACKER,
+                    persist=True,
+                    verbose=False,
+                    **half_kwargs,
+                )[0]
+
+                frame_idx = int(frame_p.stem.split("_")[1])
+                boxes = result.boxes
+                if boxes is not None:
+                    for box in boxes:
+                        x1, y1, x2, y2 = [round(v, 2) for v in box.xyxy[0].tolist()]
+                        track_id = int(box.id[0]) if box.id is not None else -1
+                        rows.append({
+                            "frame_idx": frame_idx,
+                            "view": view_name,
+                            "track_id": track_id,
+                            "x1": x1,
+                            "y1": y1,
+                            "x2": x2,
+                            "y2": y2,
+                            "confidence": round(float(box.conf[0]), 4),
+                            "class_id": PERSON_CLASS_ID,
+                        })
+
+                if (frame_num + 1) % 100 == 0 or (frame_num + 1) == len(local_frame_paths):
+                    print(f"[INFO] {view_name}: {frame_num + 1}/{len(local_frame_paths)} frames tracked")
 
     else:
         # --- Detection-only mode: high-throughput batched GPU/CPU inference
