@@ -8,10 +8,13 @@ pairwise cosine similarity between 512-d ReID tracklet embeddings, enforces
 spatio-temporal feasibility constraints (temporal overlap / proximity), and
 resolves consistent global identities using hierarchical agglomerative clustering.
 
+Note: By default, this script now operates on the STITCHED (de-fragmented) 
+tracklet features (Stage 1c output) for optimal clustering performance.
+
 Key Outputs:
 1. data_manifests/cross_view_graph.csv:
    All candidate cross-view edges with cosine similarity and physical time gap.
-2. data_manifests/global_identities.csv:
+2. data_manifests/global_identities_v2.csv (default):
    Mapping of (view, track_id) to global_id, including low-confidence singletons.
 
 Usage:
@@ -40,9 +43,9 @@ from config import (
 
 # --- Module-Level Constants & Paths -----------------------------------------
 DEFAULT_MANIFEST_PATH = (
-    Path(__file__).resolve().parent.parent / "data_manifests" / "tracklet_features.csv"
+    Path(__file__).resolve().parent.parent / "data_manifests" / "tracklet_features_stitched.csv"
 )
-DEFAULT_NPZ_PATH = DATA_DIR / "tracklet_embeddings.npz"
+DEFAULT_NPZ_PATH = DATA_DIR / "tracklet_embeddings_stitched.npz"
 DEFAULT_GRAPH_PATH = (
     Path(__file__).resolve().parent.parent / "data_manifests" / "cross_view_graph.csv"
 )
@@ -75,9 +78,10 @@ def load_tracklet_manifest(
     with open(manifest_path, mode="r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for r in reader:
+            track_id = r.get("stitched_track_id", r.get("track_id"))
             item = {
                 "view": r["view"],
-                "track_id": int(r["track_id"]),
+                "track_id": int(track_id),
                 "start_frame": int(r["start_frame"]),
                 "end_frame": int(r["end_frame"]),
                 "start_time": float(r["start_time"]),

@@ -5,7 +5,8 @@ Produces a first-pass multi-view summary by reconciling per-view keyframe shots,
 cross-view global identities, and object detection data.
 
 This script operates purely on structured CSV manifests and does not require GPU
-or model inference.
+or model inference. By default, it now uses the stitched v2 tracklet and global 
+identity files for cleaner cross-view clustering.
 
 Usage:
     python -m src.build_summary
@@ -88,13 +89,10 @@ def reconstruct_shot_windows() -> list[dict]:
     return all_shots
 
 
-def link_shots_to_global_identities(shots: list[dict]) -> list[dict]:
+def link_shots_to_global_identities(shots: list[dict], tf_path: Path, gi_path: Path) -> list[dict]:
     """
     Link each shot to global identities by finding overlapping tracklets.
     """
-    tf_path = MANIFESTS_DIR / "tracklet_features.csv"
-    gi_path = MANIFESTS_DIR / "global_identities.csv"
-    
     if not tf_path.exists():
         print(f"[ERROR] Required input file missing: {tf_path}", file=sys.stderr)
         sys.exit(1)
@@ -134,7 +132,8 @@ def link_shots_to_global_identities(shots: list[dict]) -> list[dict]:
                 overlap_frames = max(0, o_end - o_start + 1)
                 
                 if overlap_frames / s_frames >= MIN_OVERLAP_FRAC:
-                    key = (view, int(row["track_id"]))
+                    track_id = int(row["stitched_track_id"]) if "stitched_track_id" in row else int(row["track_id"])
+                    key = (view, track_id)
                     if key in gi_map:
                         shot_to_overlaps[id(shot)].append((gi_map[key], overlap_frames))
                         
@@ -384,12 +383,10 @@ def select_representatives_and_assemble(unclustered: list[dict], clusters: list[
     return final_summary
 
 
-def write_output(final_summary: list[dict]) -> None:
+def write_output(final_summary: list[dict], out_path: Path) -> None:
     """
     Write data_manifests/final_summary.csv.
     """
-    out_path = MANIFESTS_DIR / "final_summary.csv"
-    
     fieldnames = [
         "sequence_order", "view", "shot_id", "window_start_frame", "window_end_frame",
         "keyframe_frame_idx", "vq_proxy_score", "cluster_id", "linked_global_ids"
@@ -410,6 +407,24 @@ def write_output(final_summary: list[dict]) -> None:
 def main():
     import argparse
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--tracklet-manifest",
+        type=Path,
+        default=MANIFESTS_DIR / "tracklet_features_stitched.csv",
+        help="Path to tracklet manifest",
+    )
+    parser.add_argument(
+        "--global-identities",
+        type=Path,
+        default=MANIFESTS_DIR / "global_identities_v2.csv",
+        help="Path to global identities manifest",
+    )
+    parser.add_argument(
+        "--out-summary",
+        type=Path,
+        default=MANIFESTS_DIR / "final_summary_v2.csv",
+        help="Output path for final summary",
+    )
     args = parser.parse_args()
     
     print("[INFO] Starting Multi-View Summary Build...")
@@ -419,7 +434,7 @@ def main():
     print(f"[INFO] Loaded {len(shots)} total shots.")
     
     print("[INFO] Linking shots to global identities...")
-    shots = link_shots_to_global_identities(shots)
+    shots = link_shots_to_global_identities(shots, args.tracklet_manifest, args.global_identities)
     
     print("[INFO] Computing View Quality proxy scores...")
     shots = compute_vq_proxy_score(shots)
@@ -431,7 +446,7 @@ def main():
     final_summary = select_representatives_and_assemble(unclustered, clusters)
     
     print("[INFO] Writing output manifest...")
-    write_output(final_summary)
+    write_output(final_summary, args.out_summary)
     
     # Print [DONE] summary
     view_counts = defaultdict(int)
