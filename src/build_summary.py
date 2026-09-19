@@ -34,17 +34,17 @@ FRAME_HEIGHT = 288
 TOTAL_AREA = FRAME_WIDTH * FRAME_HEIGHT
 MIN_OVERLAP_FRAC = 0.25
 BROAD_ID_THRESHOLD = 0.15
-MAX_SLOT_SPAN_FRAMES = 750  # 3x a single 250-frame shot window, bounds possible over-merging
 
 
-def reconstruct_shot_windows() -> list[dict]:
+def reconstruct_shot_windows(suffix: str = "") -> list[dict]:
     """
     For each view, load keyframe_decisions_viewX.csv, filter to accepted == 1,
     group by shot_id, and compute window bounds and best keyframe.
     """
     all_shots = []
     for view in VIEWS:
-        path = MANIFESTS_DIR / f"keyframe_decisions_{view}.csv"
+        filename = f"keyframe_decisions_{view}_{suffix}.csv" if suffix else f"keyframe_decisions_{view}.csv"
+        path = MANIFESTS_DIR / filename
         if not path.exists():
             print(f"[ERROR] Required input file missing: {path}", file=sys.stderr)
             sys.exit(1)
@@ -87,6 +87,7 @@ def reconstruct_shot_windows() -> list[dict]:
             })
             
     return all_shots
+
 
 
 def link_shots_to_global_identities(shots: list[dict], tf_path: Path, gi_path: Path) -> list[dict]:
@@ -187,59 +188,43 @@ def link_shots_to_global_identities(shots: list[dict], tf_path: Path, gi_path: P
     return shots
 
 
-def compute_vq_proxy_score(shots: list[dict]) -> list[dict]:
+def compute_vq_score(shots: list[dict]) -> list[dict]:
     """
-    Compute a placeholder View Quality (VQ) proxy score for each shot based on detections.
+    Compute the View Quality (VQ) score for each shot based on the real VQ score
+    computed via camera calibration (loaded from data_manifests/vq_scores_viewX.csv).
     """
     shots_by_view = defaultdict(list)
     for i, shot in enumerate(shots):
         shots_by_view[shot["view"]].append((i, shot))
         
     for view, view_shots in shots_by_view.items():
-        det_path = DATA_DIR / "detections" / f"{view}.csv"
-        if not det_path.exists():
-            print(f"[ERROR] Required input file missing: {det_path}", file=sys.stderr)
+        vq_path = MANIFESTS_DIR / f"vq_scores_{view}.csv"
+        if not vq_path.exists():
+            print(f"[ERROR] Required input file missing: {vq_path}", file=sys.stderr)
             sys.exit(1)
             
-        det_df = pd.read_csv(det_path)
+        vq_df = pd.read_csv(vq_path)
         
         for idx, shot in view_shots:
-            if det_df.empty:
-                shots[idx]["vq_proxy_score"] = 0.0
+            if vq_df.empty:
+                shots[idx]["vq_score"] = 0.0
                 continue
                 
             # Filter detections to this shot's window
-            mask = (det_df["frame_idx"] >= shot["window_start_frame"]) & (det_df["frame_idx"] <= shot["window_end_frame"])
-            shot_dets = det_df[mask]
+            mask = (vq_df["frame_idx"] >= shot["window_start_frame"]) & (vq_df["frame_idx"] <= shot["window_end_frame"])
+            shot_dets = vq_df[mask]
             
             if shot_dets.empty:
-                shots[idx]["vq_proxy_score"] = 0.0
+                shots[idx]["vq_score"] = 0.0
                 continue
                 
-            # Compute proxy score per frame
-            # NOTE: This is a placeholder standing in for the base paper's full occlusion/angle/distance 
-            # VQ formula, pending camera calibration data. It uses confidence, normalized bbox area, 
-            # and an edge_penalty for a rudimentary quality proxy.
-            areas = (shot_dets["x2"] - shot_dets["x1"]) * (shot_dets["y2"] - shot_dets["y1"])
-            normalized_areas = areas / TOTAL_AREA
-            
-            # Edge penalty: penalize bounding boxes that touch the outer 5 pixels of the frame
-            edge_penalty = np.where(
-                (shot_dets["x1"] < 5) | (shot_dets["y1"] < 5) | 
-                (shot_dets["x2"] > FRAME_WIDTH - 5) | (shot_dets["y2"] > FRAME_HEIGHT - 5),
-                0.5, 1.0
-            )
-            
-            # Combined score per detection: confidence * normalized_area * edge_penalty
-            scores = shot_dets["confidence"] * normalized_areas * edge_penalty
-            
             # Aggregate across the shot: we use the max score to represent the best view of any person in that shot
-            shots[idx]["vq_proxy_score"] = float(scores.max())
+            shots[idx]["vq_score"] = float(shot_dets["vq_score"].max())
             
     return shots
 
 
-def build_event_clusters(shots: list[dict]) -> tuple[list[dict], list[list[dict]]]:
+def build_event_clusters(shots: list[dict], max_slot_span_frames: int = 750) -> tuple[list[dict], list[list[dict]]]:
     """
     TWO-PHASE CLUSTERING:
     Phase 1: Time-slot bucketing (no identity involved) to prevent identity sharing
@@ -267,12 +252,12 @@ def build_event_clusters(shots: list[dict]) -> tuple[list[dict], list[list[dict]
             shot["window_start_frame"] > slot_max_end + CLUSTER_TOLERANCE_FRAMES
         )
         
-        # Check if merging would exceed MAX_SLOT_SPAN_FRAMES
+        # Check if merging would exceed max_slot_span_frames
         new_min_start = min(slot_min_start, shot["window_start_frame"])
         new_max_end = max(slot_max_end, shot["window_end_frame"])
         new_span = new_max_end - new_min_start
         
-        if overlap and new_span <= MAX_SLOT_SPAN_FRAMES:
+        if overlap and new_span <= max_slot_span_frames:
             last_slot.append(shot)
         else:
             time_slots.append([shot])
@@ -344,7 +329,7 @@ def build_event_clusters(shots: list[dict]) -> tuple[list[dict], list[list[dict]
 
 def select_representatives_and_assemble(unclustered: list[dict], clusters: list[list[dict]]) -> list[dict]:
     """
-    Pick the shot with the highest vq_proxy_score for each cluster, logging drops.
+    Pick the shot with the highest vq_score for each cluster, logging drops.
     Assemble final chronological summary.
     """
     final_summary = []
@@ -357,8 +342,8 @@ def select_representatives_and_assemble(unclustered: list[dict], clusters: list[
             final_summary.append(rep)
             continue
             
-        # Pick highest vq_proxy_score
-        rep = max(cluster, key=lambda s: s["vq_proxy_score"])
+        # Pick highest vq_score
+        rep = max(cluster, key=lambda s: s["vq_score"])
         rep["cluster_id"] = cluster_id
         final_summary.append(rep)
         
@@ -389,7 +374,7 @@ def write_output(final_summary: list[dict], out_path: Path) -> None:
     """
     fieldnames = [
         "sequence_order", "view", "shot_id", "window_start_frame", "window_end_frame",
-        "keyframe_frame_idx", "vq_proxy_score", "cluster_id", "linked_global_ids"
+        "keyframe_frame_idx", "vq_score", "cluster_id", "linked_global_ids"
     ]
     
     # Format linked_global_ids
@@ -425,22 +410,34 @@ def main():
         default=MANIFESTS_DIR / "final_summary_v2.csv",
         help="Output path for final summary",
     )
+    parser.add_argument(
+        "--suffix",
+        type=str,
+        default="",
+        help="Suffix for keyframe decisions files (e.g. 'w150')",
+    )
+    parser.add_argument(
+        "--max-slot-span-frames",
+        type=int,
+        default=750,
+        help="Maximum frame span for a single time slot cluster (default: 750)",
+    )
     args = parser.parse_args()
     
     print("[INFO] Starting Multi-View Summary Build...")
     
     print("[INFO] Reconstructing shot windows...")
-    shots = reconstruct_shot_windows()
+    shots = reconstruct_shot_windows(suffix=args.suffix)
     print(f"[INFO] Loaded {len(shots)} total shots.")
     
     print("[INFO] Linking shots to global identities...")
     shots = link_shots_to_global_identities(shots, args.tracklet_manifest, args.global_identities)
     
-    print("[INFO] Computing View Quality proxy scores...")
-    shots = compute_vq_proxy_score(shots)
+    print("[INFO] Computing View Quality scores...")
+    shots = compute_vq_score(shots)
     
     print("[INFO] Building cross-view event clusters...")
-    unclustered, clusters = build_event_clusters(shots)
+    unclustered, clusters = build_event_clusters(shots, max_slot_span_frames=args.max_slot_span_frames)
     
     print("[INFO] Selecting cluster representatives...")
     final_summary = select_representatives_and_assemble(unclustered, clusters)

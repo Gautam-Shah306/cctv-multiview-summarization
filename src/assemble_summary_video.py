@@ -79,8 +79,8 @@ def assemble_video() -> None:
 
     print(f"[INFO] Total frames to process: {total_frames}. Preparing video assembly...")
 
-    OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
-    out_video = OUTPUTS_DIR / "final_summary_video.mp4"
+    MANIFESTS_DIR.mkdir(parents=True, exist_ok=True)
+    out_video = MANIFESTS_DIR / "final_summary_video.mp4"
 
     # Step 4: Write labeled frames to a temporary directory for ffmpeg
     with tempfile.TemporaryDirectory() as temp_dir:
