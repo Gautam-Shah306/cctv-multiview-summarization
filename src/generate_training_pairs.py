@@ -1,6 +1,7 @@
 import sys
 import csv
 import random
+import argparse
 from pathlib import Path
 from collections import defaultdict
 import numpy as np
@@ -16,10 +17,10 @@ from src.build_summary import (
     CLUSTER_TOLERANCE_FRAMES
 )
 
-def generate_pairs():
+def generate_pairs(suffix=""):
     # 1. Reconstruct and link shots
-    print("[INFO] Loading and linking shots...")
-    shots = reconstruct_shot_windows(suffix="")
+    print(f"[INFO] Loading and linking shots (suffix='{suffix}')...")
+    shots = reconstruct_shot_windows(suffix=suffix)
     
     tf_path = MANIFESTS_DIR / "tracklet_features_stitched.csv"
     gi_path = MANIFESTS_DIR / "global_identities_v2.csv"
@@ -32,11 +33,28 @@ def generate_pairs():
     
     print(f"[INFO] Processed {len(shots)} shots.")
     
+    if len(shots) == 0:
+        print("[ERROR] No shots found! Aborting.")
+        return
+        
+    # Print linking summary stats
+    zero_links = sum(1 for s in shots if not s.get("filtered_linked_ids"))
+    one_link = sum(1 for s in shots if len(s.get("filtered_linked_ids", [])) == 1)
+    two_plus_links = sum(1 for s in shots if len(s.get("filtered_linked_ids", [])) >= 2)
+    print(f"[INFO] Linking Summary: {zero_links} unlinked | {one_link} single-ID | {two_plus_links} multi-ID")
+    
     positives = []
     hard_negatives = []
     easy_negatives = []
     
-    MAX_SLOT_SPAN = 750
+    # Dynamically determine the shot window size from the first shot
+    # e.g., 250 or 150
+    sample_window = shots[0]["window_end_frame"] - shots[0]["window_start_frame"] + 1
+    # Hard negative gap threshold is 2x single shot window
+    hard_neg_threshold = sample_window * 2
+    
+    print(f"[INFO] Determined shot window size: {sample_window} frames.")
+    print(f"[INFO] Hard negative gap threshold: {hard_neg_threshold} frames.")
     
     # 2. Generate Pairs
     print("[INFO] Generating positive and negative pairs...")
@@ -46,39 +64,34 @@ def generate_pairs():
             s_a = shots[i]
             s_b = shots[j]
             
-            # Extract linked IDs (filtered of broad IDs as per build_summary)
-            # Actually, let's use all linked_global_ids or filtered?
-            # We'll use filtered_linked_ids because broad IDs are noise.
+            # Extract linked IDs (filtered of broad IDs)
             ids_a = set(s_a.get("filtered_linked_ids", []))
             ids_b = set(s_b.get("filtered_linked_ids", []))
             
             shared_ids = ids_a.intersection(ids_b)
             
             # Temporal gap
-            # Gap > 0 means they don't overlap. Gap <= 0 means overlap.
             gap = max(0, max(s_a["window_start_frame"], s_b["window_start_frame"]) - 
                          min(s_a["window_end_frame"], s_b["window_end_frame"]))
             
             # Classify
             if shared_ids:
                 if s_a["view"] != s_b["view"]:
-                    # Cross-view Positive (assuming any time overlap/closeness, but we'll take all with shared ID)
+                    # Cross-view Positive
                     if gap <= CLUSTER_TOLERANCE_FRAMES:
                         positives.append((s_a, s_b, "positive_cross_view"))
                 else:
                     # Intra-view Positive
-                    if gap <= MAX_SLOT_SPAN:
+                    if gap <= hard_neg_threshold:
                         positives.append((s_a, s_b, "positive_intra_view"))
             else:
                 if s_a["view"] != s_b["view"]:
-                    # TIGHTENED: Hard negatives must be <= 500 frames apart (2x shot window)
-                    if gap <= 500:
+                    # TIGHTENED: Hard negatives must be <= 2x shot window apart
+                    if gap <= hard_neg_threshold:
                         hard_negatives.append((s_a, s_b, "hard_negative"))
                     else:
                         easy_negatives.append((s_a, s_b, "easy_negative"))
                 else:
-                    # Same view without shared IDs. If they are close in time, it might just be different people.
-                    # We'll consider them easy negatives to prioritize cross-view hard negatives.
                     easy_negatives.append((s_a, s_b, "easy_negative"))
                     
     print(f"[INFO] Found {len(positives)} total positive pairs.")
@@ -86,14 +99,10 @@ def generate_pairs():
     print(f"[INFO] Found {len(easy_negatives)} total easy negative pairs.")
     
     # 3. Balancing
-    # We want 1:1 positive:negative.
-    # Negatives should be 50% hard, 50% easy (or whatever ratio maxes out hard negatives)
     target_neg_count = len(positives)
-    
     target_hard = min(len(hard_negatives), target_neg_count // 2)
     target_easy = target_neg_count - target_hard
     
-    # If not enough easy negatives (unlikely), take more hard ones
     if target_easy > len(easy_negatives):
         target_easy = len(easy_negatives)
         target_hard = min(len(hard_negatives), target_neg_count - target_easy)
@@ -161,7 +170,6 @@ def generate_pairs():
     for pair in final_pairs:
         k_a = f"{pair['shot_A_view']}_shot_{pair['shot_A_id']}"
         if k_a not in unique_shots:
-            # Find the shot object
             s_a = next(s for s in shots if s["view"] == pair['shot_A_view'] and s["shot_id"] == pair['shot_A_id'])
             unique_shots[k_a] = s_a
             
@@ -181,7 +189,6 @@ def generate_pairs():
         dino_path = DATA_DIR / "dinov3_embeddings" / f"{view}_dinov3.npz"
         if dino_path.exists():
             d = np.load(dino_path)
-            # Map frame_idx -> embedding
             frames = d["frame_indices"]
             embeds = d["embeddings"]
             dino_data[view] = {frames[i]: embeds[i] for i in range(len(frames))}
@@ -204,7 +211,6 @@ def generate_pairs():
             dino_features[shot_key] = np.zeros(384, dtype=np.float32)
             
         # ReID
-        # Find all tracklets in this view that overlap the shot window
         s_start = shot["window_start_frame"]
         s_end = shot["window_end_frame"]
         
@@ -221,27 +227,30 @@ def generate_pairs():
         if shot_reids:
             reid_features[shot_key] = np.vstack(shot_reids)
         else:
-            # Empty shot fallback
             print(f"[WARNING] No ReID embeddings found for {shot_key}. Using zeros.")
             reid_features[shot_key] = np.zeros((1, 512), dtype=np.float32)
             
     # 5. Write outputs
     df_pairs = pd.DataFrame(final_pairs)
-    # Add an explicit pair_id
     df_pairs.insert(0, "pair_id", df_pairs.index)
     
-    out_csv = MANIFESTS_DIR / "training_pairs.csv"
+    suffix_str = f"_{suffix}" if suffix else ""
+    out_csv = MANIFESTS_DIR / f"training_pairs{suffix_str}.csv"
     df_pairs.to_csv(out_csv, index=False)
     
-    out_dino = MANIFESTS_DIR / "training_features_dino.npz"
+    out_dino = MANIFESTS_DIR / f"training_features_dino{suffix_str}.npz"
     np.savez(out_dino, **dino_features)
     
-    out_reid = MANIFESTS_DIR / "training_features_reid.npz"
+    out_reid = MANIFESTS_DIR / f"training_features_reid{suffix_str}.npz"
     np.savez(out_reid, **reid_features)
     
-    print(f"\n[DONE] Wrote {len(df_pairs)} pairs to {out_csv}")
-    print(f"[DONE] Wrote DINOv3 embeddings to {out_dino}")
-    print(f"[DONE] Wrote ReID embeddings (un-pooled, exact set of tracklets) to {out_reid}")
+    print(f"\n[DONE] Wrote {len(df_pairs)} pairs to {out_csv.name}")
+    print(f"[DONE] Wrote DINOv3 embeddings to {out_dino.name}")
+    print(f"[DONE] Wrote ReID embeddings to {out_reid.name}")
 
 if __name__ == "__main__":
-    generate_pairs()
+    parser = argparse.ArgumentParser(description="Generate training pairs for Graph Transformer")
+    parser.add_argument("--suffix", type=str, default="", help="Suffix for input keyframes and output files (e.g. 'w150')")
+    args = parser.parse_args()
+    
+    generate_pairs(suffix=args.suffix)
