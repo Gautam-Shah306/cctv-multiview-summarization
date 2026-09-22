@@ -177,27 +177,25 @@ def main():
     # So the per-view summary for the Graph Transformer IS just the 81 shots from `keyframe_decisions_viewX_w150.csv`.
     # And for ruleBased, it's the 48 shots from `keyframe_decisions_viewX.csv`.
     
+    from src.build_summary import reconstruct_shot_windows
+    
+    rb_all_shots = reconstruct_shot_windows("")
+    gt_all_shots = reconstruct_shot_windows("w150")
+    
     for view in ["view1", "view2", "view3"]:
         # Rule-based (250-frame)
-        rb_in = MANIFESTS_DIR / f"keyframe_decisions_{view}.csv"
-        rb_df = pd.read_csv(rb_in)
-        # Rename start/end to match format for assemble_video
-        rb_df["window_start_frame"] = rb_df["window_start"]
-        rb_df["window_end_frame"] = rb_df["window_end"]
-        rb_df["sequence_order"] = range(1, len(rb_df) + 1)
-        rb_df["view"] = view
+        rb_shots = [s for s in rb_all_shots if s["view"] == view]
+        for i, s in enumerate(rb_shots):
+            s["sequence_order"] = i + 1
         rb_out = f"per_view_summary_{view}_ruleBased.csv"
-        rb_df.to_csv(MANIFESTS_DIR / rb_out, index=False)
+        pd.DataFrame(rb_shots).to_csv(MANIFESTS_DIR / rb_out, index=False)
         
         # Graph Transformer (150-frame)
-        gt_in = MANIFESTS_DIR / f"keyframe_decisions_{view}_w150.csv"
-        gt_view_df = pd.read_csv(gt_in)
-        gt_view_df["window_start_frame"] = gt_view_df["window_start"]
-        gt_view_df["window_end_frame"] = gt_view_df["window_end"]
-        gt_view_df["sequence_order"] = range(1, len(gt_view_df) + 1)
-        gt_view_df["view"] = view
+        gt_shots = [s for s in gt_all_shots if s["view"] == view]
+        for i, s in enumerate(gt_shots):
+            s["sequence_order"] = i + 1
         gt_out = f"per_view_summary_{view}_graphTransformer.csv"
-        gt_view_df.to_csv(MANIFESTS_DIR / gt_out, index=False)
+        pd.DataFrame(gt_shots).to_csv(MANIFESTS_DIR / gt_out, index=False)
         
         # Generate Videos
         print(f"Generating video for {rb_out}...")

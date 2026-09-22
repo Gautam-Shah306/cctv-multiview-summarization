@@ -4,6 +4,7 @@ import numpy as np
 import random
 from pathlib import Path
 from sklearn.decomposition import PCA
+from config import DRIVE_ROOT
 
 try:
     import torch
@@ -13,14 +14,15 @@ except ImportError:
     sys.exit(1)
 
 MANIFESTS_DIR = Path(__file__).resolve().parent.parent / "data_manifests"
+DRIVE_MANIFESTS_DIR = DRIVE_ROOT / "data_manifests"
 
 def build_graph_w150_sparse():
     # Load dataset
     pairs_df = pd.read_csv(MANIFESTS_DIR / "training_pairs_w150.csv")
     
-    # Load SPARCELY SAMPLED features
-    dino_features = np.load(MANIFESTS_DIR / "training_features_dino_w150_sparse.npz")
-    reid_features = np.load(MANIFESTS_DIR / "training_features_reid_w150_sparse.npz")
+    # Load SPARCELY SAMPLED features from Google Drive where they were saved by Colab
+    dino_features = np.load(DRIVE_MANIFESTS_DIR / "training_features_dino_w150_sparse.npz")
+    reid_features = np.load(DRIVE_MANIFESTS_DIR / "training_features_reid_w150_sparse.npz")
     
     # 1. Identify all unique nodes
     nodes = {}

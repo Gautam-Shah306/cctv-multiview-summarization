@@ -124,6 +124,10 @@ def compute_vq_scores():
        orientation. However, 60-80% of detections lack sufficient movement history 
        and fall back to theta_i=0 (facing camera). This means this term has weak 
        discriminative power for much of the dataset. This is an accepted limitation.
+    3. Angle Scoring (phi_i, theta_i): We use a cosine mapping (math.cos) rather than 
+       the base paper's literal linear penalty. This is a deliberate, confirmed 
+       deviation chosen for its smooth falloff behavior, and has been reviewed 
+       and kept as-is.
     """
     # 1. Load tracking data to build trajectory history for theta_i
     # We use the stitched tracklets if possible, or just the original detections' track_ids.
