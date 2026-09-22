@@ -25,12 +25,12 @@ MANIFESTS_DIR = Path(__file__).resolve().parent.parent / "data_manifests"
 FPS = 25.0
 
 
-def assemble_video() -> None:
+def assemble_video(input_csv: str, output_mp4: str) -> None:
     """
-    Reads the final_summary.csv, collects all frames for each shot,
+    Reads the summary CSV, collects all frames for each shot,
     overlays a label, and encodes the sequence into an MP4 using ffmpeg.
     """
-    csv_path = MANIFESTS_DIR / "final_summary.csv"
+    csv_path = Path(input_csv)
     if not csv_path.exists():
         print(f"[ERROR] Required input file missing: {csv_path}", file=sys.stderr)
         sys.exit(1)
@@ -45,17 +45,18 @@ def assemble_video() -> None:
         print("[INFO] No shots in summary to assemble.")
         return
 
-    # Sort by sequence_order
-    shots.sort(key=lambda x: int(x["sequence_order"]))
+    # Sort by sequence_order if it exists, otherwise process in order
+    if all("sequence_order" in s for s in shots):
+        shots.sort(key=lambda x: int(x["sequence_order"]))
 
     # Step 2 & 3: Collect ordered list of frame file paths
     print(f"[INFO] Collecting frames for {len(shots)} summary events...")
     frame_sequence = []
-    for shot in shots:
+    for i, shot in enumerate(shots):
         view = shot["view"]
         start_f = int(shot["window_start_frame"])
         end_f = int(shot["window_end_frame"])
-        seq_order = shot["sequence_order"]
+        seq_order = shot.get("sequence_order", str(i+1))
 
         for frame_idx in range(start_f, end_f + 1):
             img_filename = f"frame_{frame_idx:04d}.jpg"
@@ -79,8 +80,8 @@ def assemble_video() -> None:
 
     print(f"[INFO] Total frames to process: {total_frames}. Preparing video assembly...")
 
-    MANIFESTS_DIR.mkdir(parents=True, exist_ok=True)
-    out_video = MANIFESTS_DIR / "final_summary_video.mp4"
+    out_video = Path(output_mp4)
+    out_video.parent.mkdir(parents=True, exist_ok=True)
 
     # Step 4: Write labeled frames to a temporary directory for ffmpeg
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -140,8 +141,10 @@ def assemble_video() -> None:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--input", type=str, default=str(MANIFESTS_DIR / "final_summary.csv"), help="Input CSV summary file")
+    parser.add_argument("--output", type=str, default=str(MANIFESTS_DIR / "final_summary_video.mp4"), help="Output MP4 video file")
     args = parser.parse_args()
-    assemble_video()
+    assemble_video(args.input, args.output)
 
 
 if __name__ == "__main__":
