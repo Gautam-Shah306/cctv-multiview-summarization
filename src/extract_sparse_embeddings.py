@@ -116,9 +116,16 @@ def main():
     stitched_path = MANIFESTS_DIR / "tracklet_features_stitched.csv"
     stitch_map = {}
     if stitched_path.exists():
+        import ast
         stitch_df = pd.read_csv(stitched_path)
         for _, row in stitch_df.iterrows():
-            stitch_map[(row["view"], int(row["track_id"]))] = int(row["stitched_track_id"])
+            if "original_track_ids" in row:
+                try:
+                    orig_ids = ast.literal_eval(row["original_track_ids"])
+                    for orig_id in orig_ids:
+                        stitch_map[(row["view"], int(orig_id))] = int(row["stitched_track_id"])
+                except:
+                    pass
             
     dino_features = {}
     reid_features = {}
