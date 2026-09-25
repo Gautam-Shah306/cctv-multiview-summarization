@@ -1,8 +1,19 @@
-import sys
-import pandas as pd
-import numpy as np
+"""
+build_graph.py
+
+Constructs the cross-view graph structure for the Graph Transformer model
+from the dense (non-sparse) feature tracklets and matching CSV pairs.
+
+Usage:
+    python -m src.build_graph
+"""
+
 import random
+import sys
 from pathlib import Path
+
+import numpy as np
+import pandas as pd
 
 # Check for PyG
 try:
@@ -14,7 +25,7 @@ except ImportError:
 
 MANIFESTS_DIR = Path(__file__).resolve().parent.parent / "data_manifests"
 
-def build_graph():
+def build_graph() -> Data:
     # Load dataset
     pairs_df = pd.read_csv(MANIFESTS_DIR / "training_pairs.csv")
     

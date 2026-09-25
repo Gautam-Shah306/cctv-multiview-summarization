@@ -8,12 +8,16 @@ over annotated floor points to resolve the true Look-At targets and FOVs.
 Outputs the calibrated camera intrinsics (K), extrinsics (R, t), and 
 computes the View Quality (VQ) scores for every detection based on 
 the 3D spatial relationship between the camera and the subject.
+
+Usage:
+    python -m src.camera_calibration
 """
 
 import csv
 import math
-from pathlib import Path
 from collections import defaultdict
+from pathlib import Path
+
 import numpy as np
 
 # Group 3 — local / project
@@ -106,7 +110,7 @@ def ray_intersect_z0(K: np.ndarray, R: np.ndarray, t: np.ndarray, u: float, v: f
     return P[:2]
 
 
-def compute_vq_scores():
+def compute_vq_scores() -> None:
     """
     Computes real VQ terms for every detection across all views.
     Q_i: Detection confidence + edge check (gates the expression).

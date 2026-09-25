@@ -1,12 +1,23 @@
+"""
+train_graph_transformer.py
+
+Trains a Graph Transformer (GAT) to predict cross-view re-identification 
+links based on dense tracklet node features.
+
+Usage:
+    python -m src.train_graph_transformer
+"""
+
 import sys
+from pathlib import Path
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GATConv
-from pathlib import Path
-import numpy as np
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from torch_geometric.nn import GATConv
 
 from src.build_graph import build_graph
 
@@ -51,7 +62,7 @@ class GraphTransformer(torch.nn.Module):
         edge_feat = torch.cat([u, v], dim=-1)
         return self.edge_classifier(edge_feat).squeeze(-1)
 
-def train():
+def train() -> None:
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"[INFO] Device: {device}. (Note: User requested Colab GPU. Running in available environment.)")
     
