@@ -24,16 +24,36 @@ def build_graph_w150_sparse():
     dino_features = np.load(DRIVE_MANIFESTS_DIR / "training_features_dino_w150_sparse.npz")
     reid_features = np.load(DRIVE_MANIFESTS_DIR / "training_features_reid_w150_sparse.npz")
     
-    # 1. Identify all unique nodes
+    # 1. Identify all unique nodes and filter pairs
     nodes = {}
+    valid_pairs = []
+    skipped_pairs_count = 0
+    
     for _, row in pairs_df.iterrows():
         k_a = f"{row['shot_A_view']}_shot_{row['shot_A_id']}"
+        k_b = f"{row['shot_B_view']}_shot_{row['shot_B_id']}"
+        
+        missing = None
+        if k_a not in dino_features: missing = (k_a, "DINO")
+        elif k_a not in reid_features: missing = (k_a, "ReID")
+        elif k_b not in dino_features: missing = (k_b, "DINO")
+        elif k_b not in reid_features: missing = (k_b, "ReID")
+        
+        if missing:
+            print(f"[INFO] Skipped pair: shot_key {missing[0]} missing from {missing[1]} features.")
+            skipped_pairs_count += 1
+            continue
+            
+        valid_pairs.append(row)
+        
         if k_a not in nodes:
             nodes[k_a] = {"view": row['shot_A_view'], "vq": row['shot_A_vq'], "start": row['shot_A_start']}
-            
-        k_b = f"{row['shot_B_view']}_shot_{row['shot_B_id']}"
         if k_b not in nodes:
             nodes[k_b] = {"view": row['shot_B_view'], "vq": row['shot_B_vq'], "start": row['shot_B_start']}
+            
+    pairs_df = pd.DataFrame(valid_pairs)
+    print(f"[INFO] Total skipped pairs due to missing sparse features: {skipped_pairs_count}")
+
             
     node_keys = sorted(list(nodes.keys()))
     node_to_idx = {k: i for i, k in enumerate(node_keys)}

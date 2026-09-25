@@ -206,7 +206,8 @@ def main():
             if d_feats:
                 dino_features[shot_key] = np.mean(d_feats, axis=0)
             else:
-                dino_features[shot_key] = np.zeros(384, dtype=np.float32)
+                print(f"[INFO] Excluded {shot_key} from sparse output (missing DINO features).")
+                continue
                 
             # ReID pooling (group by track_id across frames, mean pool per track)
             track_feats = defaultdict(list)
@@ -219,12 +220,15 @@ def main():
                 r_feats.append(np.mean(feats, axis=0))
                 
             if len(r_feats) > 1:
-                print(f"[LOG] Multiple Tracks Found: Shot {shot_key} contains {len(r_feats)} distinct identities across its 4 frames. Maintaining as separate (N, 512) vectors.")
+                print(f"[INFO] Multiple Tracks Found: Shot {shot_key} contains {len(r_feats)} distinct identities across its 4 frames. Maintaining as separate (N, 512) vectors.")
                 
             if r_feats:
                 reid_features[shot_key] = np.vstack(r_feats)
             else:
-                reid_features[shot_key] = np.zeros((1, 512), dtype=np.float32)
+                print(f"[INFO] Excluded {shot_key} from sparse output (missing ReID features).")
+                if shot_key in dino_features:
+                    del dino_features[shot_key]
+                continue
                 
     # Save outputs
     out_dino = MANIFESTS_DIR / "training_features_dino_w150_sparse.npz"

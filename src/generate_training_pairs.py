@@ -199,6 +199,8 @@ def generate_pairs(suffix=""):
     tf_df = pd.read_csv(tf_path)
     tracklet_npz = np.load(DATA_DIR / "tracklet_embeddings_stitched.npz")
     
+    excluded_shots = set()
+    
     for shot_key, shot in unique_shots.items():
         view = shot["view"]
         
@@ -207,8 +209,9 @@ def generate_pairs(suffix=""):
         if kf in dino_data[view]:
             dino_features[shot_key] = dino_data[view][kf]
         else:
-            print(f"[WARNING] Missing DINOv3 embedding for {shot_key} at frame {kf}. Using zeros.")
-            dino_features[shot_key] = np.zeros(384, dtype=np.float32)
+            print(f"[INFO] Excluded {shot_key} (missing DINOv3 embedding at frame {kf}).")
+            excluded_shots.add(shot_key)
+            continue
             
         # ReID
         s_start = shot["window_start_frame"]
@@ -227,12 +230,29 @@ def generate_pairs(suffix=""):
         if shot_reids:
             reid_features[shot_key] = np.vstack(shot_reids)
         else:
-            print(f"[WARNING] No ReID embeddings found for {shot_key}. Using zeros.")
-            reid_features[shot_key] = np.zeros((1, 512), dtype=np.float32)
+            print(f"[INFO] Excluded {shot_key} (no ReID embeddings found in window).")
+            excluded_shots.add(shot_key)
+            if shot_key in dino_features:
+                del dino_features[shot_key]
+            continue
             
+    # Remove pairs referencing excluded shots
+    if excluded_shots:
+        valid_pairs = []
+        for p in final_pairs:
+            k_a = f"{p['shot_A_view']}_shot_{p['shot_A_id']}"
+            k_b = f"{p['shot_B_view']}_shot_{p['shot_B_id']}"
+            if k_a in excluded_shots or k_b in excluded_shots:
+                print(f"[INFO] Pair excluded: references excluded shot(s) (A: {k_a in excluded_shots}, B: {k_b in excluded_shots}).")
+            else:
+                valid_pairs.append(p)
+        final_pairs = valid_pairs
+        print(f"[INFO] Remaining valid pairs after exclusions: {len(final_pairs)}")
+
     # 5. Write outputs
     df_pairs = pd.DataFrame(final_pairs)
-    df_pairs.insert(0, "pair_id", df_pairs.index)
+    if not df_pairs.empty:
+        df_pairs.insert(0, "pair_id", df_pairs.index)
     
     suffix_str = f"_{suffix}" if suffix else ""
     out_csv = MANIFESTS_DIR / f"training_pairs{suffix_str}.csv"
