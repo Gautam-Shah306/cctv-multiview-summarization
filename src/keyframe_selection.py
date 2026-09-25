@@ -249,6 +249,10 @@ def select_keyframes_for_view(
 ) -> tuple[list[dict], dict]:
     """
     Execute adaptive within-shot keyframe selection for a given view.
+    
+    Candidate frames with zero detected persons (zero ReID embeddings) are 
+    immediately excluded from candidacy (people-only filter). Remaining frames 
+    are scored for redundancy against already-accepted keyframes in the shot.
 
     Returns:
         decision_rows: List of decision dicts for manifest logging.
@@ -274,6 +278,7 @@ def select_keyframes_for_view(
     decision_rows = []
     accepted_keyframe_indices = []
     debug_prints_count = 0
+    excluded_no_person_count = 0
 
     for shot_id in sorted(shots.keys()):
         shot_frames = shots[shot_id]
@@ -284,6 +289,23 @@ def select_keyframes_for_view(
             d_t = dino_map[frame_t]
             r_t = reid_map.get(frame_t, None)
             num_persons_t = len(r_t) if r_t is not None else 0
+
+            # --- People-Only Filter ---
+            # Exclude frames with zero detections from keyframe candidacy entirely.
+            if r_t is None or num_persons_t == 0:
+                excluded_no_person_count += 1
+                decision_rows.append({
+                    "view": view_name,
+                    "frame_idx": frame_t,
+                    "shot_id": shot_id,
+                    "accepted": 0,
+                    "max_redund_score": 0.0,
+                    "epsilon_used": 0.0,
+                    "num_persons_t": 0,
+                    "num_persons_j": 0,
+                    "fallback_triggered": 0,
+                })
+                continue
 
             # Rule: Always accept the first frame of each shot (seed keyframe)
             if len(shot_keyframes) == 0:
@@ -376,7 +398,10 @@ def select_keyframes_for_view(
         "avg_keyframes_per_shot": avg_keyframes_per_shot,
         "compression_ratio": compression_ratio,
         "reduction_pct": reduction_pct,
+        "excluded_no_person": excluded_no_person_count,
     }
+
+    print(f"[INFO] [{view_name}] Excluded {excluded_no_person_count} candidate frames due to zero ReID detections (people-only filter).")
 
     return decision_rows, metrics
 
