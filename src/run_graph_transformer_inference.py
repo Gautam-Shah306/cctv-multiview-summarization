@@ -4,12 +4,18 @@ run_graph_transformer_inference.py
 Retrains the sparse Graph Transformer on all available labeled pairs and uses it to predict
 cross-view relationships and construct event clusters, exporting a final summary video.
 
+Note: Prior/historical runs of this script (including the numbers in PROJECT_HANDOFF.md Section 8)
+were produced WITHOUT a fixed seed and are not exactly reproducible even with identical code.
+Seeded runs from this point forward establish a new reproducible baseline, not a guaranteed
+match to old numbers.
+
 Usage:
     python -m src.run_graph_transformer_inference
 """
 
 import argparse
 import itertools
+import random
 import subprocess
 import sys
 from pathlib import Path
@@ -25,6 +31,7 @@ from src.train_graph_transformer_w150_sparse import GraphTransformerW150
 from src.build_graph_w150_sparse import build_graph_w150_sparse
 
 # --- Module-Level Constants ---
+RANDOM_SEED = 42
 MANIFESTS_DIR = Path(__file__).resolve().parent.parent / "data_manifests"
 EDGE_PREDICTION_THRESHOLD = 0.5
 TRAINING_EPOCHS = 150
@@ -166,6 +173,16 @@ def generate_video(input_csv: str, output_mp4: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     args = parser.parse_args()
+
+    # Enforce Reproducibility
+    random.seed(RANDOM_SEED)
+    np.random.seed(RANDOM_SEED)
+    torch.manual_seed(RANDOM_SEED)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(RANDOM_SEED)
+    # CuDNN determinism (optional but recommended for full reproducibility)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[INFO] Running on {device}...")
