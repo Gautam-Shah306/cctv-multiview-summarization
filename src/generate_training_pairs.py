@@ -1,3 +1,11 @@
+"""
+generate_training_pairs.py
+
+Generates positive, easy negative, and hard negative training pairs for the Graph Transformer.
+Note: Pair generation is now fully deterministic. Negative sampling uses a fixed RANDOM_SEED (42) 
+to ensure GPU-to-GPU reproducibility of Graph Transformer training.
+"""
+
 import sys
 import csv
 import random
@@ -17,7 +25,11 @@ from src.build_summary import (
     CLUSTER_TOLERANCE_FRAMES
 )
 
+RANDOM_SEED = 42
+
 def generate_pairs(suffix=""):
+    random.seed(RANDOM_SEED)
+    
     # 1. Reconstruct and link shots
     print(f"[INFO] Loading and linking shots (suffix='{suffix}')...")
     shots = reconstruct_shot_windows(suffix=suffix)
