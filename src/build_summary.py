@@ -442,6 +442,19 @@ def main():
     print("[INFO] Selecting cluster representatives...")
     final_summary = select_representatives_and_assemble(unclustered, clusters)
     
+    # TASK 3 SAFETY NET: Drop any shot with ZERO linked global identities
+    valid_summary = []
+    dropped_count = 0
+    for shot in final_summary:
+        if len(shot.get("linked_global_ids", [])) == 0:
+            print(f"[INFO] Rule-Based Path: Dropping shot {shot['view']}/shot_{shot.get('shot_id', 'unknown')} (frames {shot['window_start_frame']}-{shot['window_end_frame']}) - ZERO linked global identities.")
+            dropped_count += 1
+        else:
+            valid_summary.append(shot)
+    
+    print(f"[INFO] Rule-Based Identity Filter: dropped {dropped_count} shots.")
+    final_summary = valid_summary
+    
     print("[INFO] Writing output manifest...")
     write_output(final_summary, args.out_summary)
     
